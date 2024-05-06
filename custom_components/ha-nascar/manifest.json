@@ -1,6 +1,6 @@
 {
     "domain": "ha_nascar",
-    "name": "NASCAR Integration",
+    "name": "HA-NASCAR",
     "documentation": "https://github.com/daviswieck/ha-nascar",
     "dependencies": [],
     "codeowners": ["@daviswieck"],
