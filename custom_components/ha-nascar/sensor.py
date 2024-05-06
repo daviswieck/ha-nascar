@@ -27,6 +27,7 @@ SENSOR_TYPES = {
     "number_of_leaders": ["Number of Leaders", None, "leaders"],
     "avg_diff_1to3": ["Average Difference 1 to 3", None, None],
     "stage": ["Stage", None, None],
+    "vehicles": ["Vehicles", None, None]  # Assuming "vehicles" is an attribute
 }
 
 PLATFORM_SCHEMA = cv.PLATFORM_SCHEMA.extend({})
