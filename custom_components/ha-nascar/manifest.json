@@ -1,0 +1,11 @@
+{
+    "domain": "ha_nascar",
+    "name": "NASCAR Integration",
+    "documentation": "https://github.com/daviswieck/ha-nascar",
+    "dependencies": [],
+    "codeowners": ["@daviswieck"],
+    "requirements": [],
+    "after_dependencies": ["sensor"],
+    "config_flow": true,
+    "translations": "true"
+}
