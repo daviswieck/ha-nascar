@@ -1,78 +1,73 @@
-"""Platform for sensor integration."""
 import logging
-import requests
-from datetime import timedelta
-import voluptuous as vol
-
-from homeassistant.const import ATTR_ATTRIBUTION
-from homeassistant.helpers.entity import Entity
+import asyncio
+import aiohttp
+import datetime
 import homeassistant.helpers.config_validation as cv
-from homeassistant.util import Throttle
-
-from .const import DOMAIN
+from homeassistant.components.sensor import SensorEntity
+from homeassistant.const import CONF_NAME
+from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
 _LOGGER = logging.getLogger(__name__)
 
-SCAN_INTERVAL = timedelta(minutes=5)
+URL = "https://cf.nascar.com/live/feeds/live-feed.json"
 
-SENSOR_TYPES = {
-    "lap_number": ["Lap Number", None, "laps"],
-    "elapsed_time": ["Elapsed Time", None, "s"],
-    "flag_state": ["Flag State", None, None],
-    "laps_in_race": ["Laps in Race", None, "laps"],
-    "laps_to_go": ["Laps to Go", None, "laps"],
-    "number_of_caution_segments": ["Number of Caution Segments", None, "segments"],
-    "number_of_caution_laps": ["Number of Caution Laps", None, "laps"],
-    "number_of_lead_changes": ["Number of Lead Changes", None, "changes"],
-    "number_of_leaders": ["Number of Leaders", None, "leaders"],
-    "avg_diff_1to3": ["Average Difference 1 to 3", None, None],
-    "stage": ["Stage", None, None],
-    "vehicles": ["Vehicles", None, None]  # Assuming "vehicles" is an attribute
-}
+async def async_setup_entry(hass, entry, async_add_entities):
+    coordinator = NASCARDataUpdateCoordinator(hass)
+    await coordinator.async_config_entry_first_refresh()
+    async_add_entities([NASCARSensor(coordinator)], True)
 
-PLATFORM_SCHEMA = cv.PLATFORM_SCHEMA.extend({})
+class NASCARDataUpdateCoordinator(DataUpdateCoordinator):
+    def __init__(self, hass):
+        self.hass = hass
+        super().__init__(
+            hass,
+            _LOGGER,
+            name="NASCAR Data",
+            update_interval=datetime.timedelta(hours=1),
+        )
 
-def setup_platform(hass, config, add_entities, discovery_info=None):
-    """Set up the sensor platform."""
-    add_entities([NascarSensor()], True)
+    async def _async_update_data(self):
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.get(URL) as response:
+                    if response.status != 200:
+                        raise UpdateFailed(f"Error fetching data: {response.status}")
+                    data = await response.json()
+                    
+                    # Extract race start time
+                    race_start = data.get("time_of_day_os")
+                    if race_start:
+                        race_start_dt = datetime.datetime.fromisoformat(race_start)
+                        now = datetime.datetime.now().astimezone()
+                        time_to_race = (race_start_dt - now).total_seconds()
+                        
+                        # Adjust polling interval
+                        if time_to_race > 3600:
+                            self.update_interval = datetime.timedelta(hours=1)
+                        elif 0 < time_to_race <= 3600:
+                            self.update_interval = datetime.timedelta(minutes=10)
+                        else:
+                            self.update_interval = datetime.timedelta(seconds=5)
 
-class NascarSensor(Entity):
-    """Representation of a NASCAR sensor."""
+                        _LOGGER.debug(f"Polling interval adjusted: {self.update_interval}")
 
-    def __init__(self):
-        """Initialize the sensor."""
-        self._state = None
-        self._attributes = {}
-        self._available = False
+                    return data
+        except Exception as err:
+            raise UpdateFailed(f"Update failed: {err}")
+
+class NASCARSensor(SensorEntity):
+    def __init__(self, coordinator):
+        self.coordinator = coordinator
+        self._attr_name = "NASCAR Live Data"
+        self._attr_unique_id = "nascar_live_data"
 
     @property
-    def name(self):
-        """Return the name of the sensor."""
-        return "NASCAR Sensor"
+    def extra_state_attributes(self):
+        return self.coordinator.data if self.coordinator.data else {}
 
     @property
     def state(self):
-        """Return the state of the sensor."""
-        return self._state
+        return self.coordinator.data.get("flag_state", "Unknown")
 
-    @property
-    def device_state_attributes(self):
-        """Return the state attributes."""
-        return self._attributes
-
-    @property
-    def available(self):
-        """Return True if entity is available."""
-        return self._available
-
-    def update(self):
-        """Fetch data from NASCAR API."""
-        try:
-            response = requests.get("https://cf.nascar.com/live/feeds/live-feed.json")
-            data = response.json()
-            self._state = data["lap_number"]
-            self._attributes = {key: data.get(key, "N/A") for key in SENSOR_TYPES.keys()}
-            self._available = True
-        except Exception as e:
-            _LOGGER.error("Error fetching data: %s", e)
-            self._available = False
+    async def async_update(self):
+        await self.coordinator.async_request_refresh()
