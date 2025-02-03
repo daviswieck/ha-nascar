@@ -1,20 +1,17 @@
-"""Custom integration for NASCAR data."""
-import logging
+"""The NASCAR Live Feed integration."""
+from homeassistant.config_entries import ConfigEntry
+from homeassistant.core import HomeAssistant
 
-from homeassistant.helpers import discovery
+from .const import DOMAIN
 
-_LOGGER = logging.getLogger(__name__)
+async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
+    """Set up the NASCAR sensor from a config entry."""
+    hass.async_create_task(
+        hass.config_entries.async_forward_entry_setup(entry, "sensor")
+    )
+    return True
 
-DOMAIN = "ha_nascar"
-
-async def async_setup(hass, config):
-    """Set up the ha_nascar component."""
-    _LOGGER.info("Setting up ha_nascar component")
-    
-    # Load the platforms
-    for platform in ["sensor"]:
-        hass.async_create_task(
-            discovery.async_load_platform(hass, platform, DOMAIN, {}, config)
-        )
-
+async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry):
+    """Handle unloading of a config entry."""
+    await hass.config_entries.async_forward_entry_unload(entry, "sensor")
     return True
