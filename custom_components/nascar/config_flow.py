@@ -1,22 +1,23 @@
 import voluptuous as vol
 from homeassistant import config_entries
 from homeassistant.core import callback
-from .const import DEFAULT_UPDATE_INTERVAL
 
-class NASCARSensorConfigFlow(config_entries.ConfigFlow, domain="ha-nascar"):
+from .const import DOMAIN, DEFAULT_UPDATE_INTERVAL  # Import DOMAIN
+
+class NASCARSensorConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):  # Use the DOMAIN constant
     """Config flow for NASCAR Live Feed sensor."""
 
     async def async_step_user(self, user_input=None):
         """Handle the initial setup step."""
         if user_input is not None:
             return self.async_create_entry(
-                title="NASCAR Live Feed",
-                data=user_input,
+                title="NASCAR Live Feed",  # Or make it dynamic, e.g., from API data
+                data=user_input,  # Store any initial config data here if needed
             )
 
         return self.async_show_form(
             step_id="user",
-            data_schema=vol.Schema({})
+            data_schema=vol.Schema({}),  # Initial form is empty (for now)
         )
 
     @staticmethod
@@ -47,5 +48,5 @@ class NASCARSensorOptionsFlowHandler(config_entries.OptionsFlow):
                         "update_interval", DEFAULT_UPDATE_INTERVAL
                     ),
                 ): int,
-            })
+            }),
         )
