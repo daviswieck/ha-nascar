@@ -1,11 +1,10 @@
 {
-    "domain": "ha_nascar",
-    "name": "HA-NASCAR",
-    "documentation": "https://github.com/daviswieck/ha-nascar",
-    "dependencies": [],
-    "codeowners": ["@daviswieck"],
-    "requirements": [],
-    "after_dependencies": ["sensor"],
-    "config_flow": true,
-    "translations": "true"
+  "domain": "ha-nascar",
+  "name": "HA-NASCAR",
+  "version": "1.0.0",
+  "documentation": "https://github.com/daviswieck/ha-nascar",
+  "dependencies": [],
+  "codeowners": ["@daviswieck"],
+  "requirements": [],
+  "iot_class": "cloud_polling"
 }
