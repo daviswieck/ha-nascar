@@ -73,7 +73,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
             if new_interval != coordinator.update_interval:
                 _LOGGER.info(f"Updating polling interval to {new_interval}")
                 coordinator.update_interval = new_interval
-            await hass.async_add_executor_job(lambda: None)  # Sleep between interval updates
             await hass.async_create_task(hass.async_sleep(60))  # Check every 60 seconds
 
     hass.loop.create_task(update_interval_task())  # Start dynamic interval updates
