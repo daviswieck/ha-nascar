@@ -6,5 +6,7 @@
   "dependencies": [],
   "codeowners": ["@daviswieck"],
   "requirements": ["aiohttp", "async_timeout"],
-  "iot_class": "cloud_polling"
+  "iot_class": "cloud_polling",
+  "config_flow": true
 }
+
