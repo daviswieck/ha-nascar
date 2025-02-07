@@ -1,10 +1,10 @@
 {
-  "domain": "ha-nascar",
+  "domain": "nascar",
   "name": "HA-NASCAR",
   "version": "1.0.0",
   "documentation": "https://github.com/daviswieck/ha-nascar",
   "dependencies": [],
   "codeowners": ["@daviswieck"],
-  "requirements": ["aiohttp", "async_timeout"]
+  "requirements": ["aiohttp", "async_timeout"],
   "iot_class": "cloud_polling"
 }
