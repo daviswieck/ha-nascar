@@ -7,24 +7,26 @@ import async_timeout
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
-
-from homeassistant.util import dt as dt_util  # ✅ Needed for datetime utilities
+from homeassistant.util import dt as dt_util
+from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
 from .const import DOMAIN, DEFAULT_UPDATE_INTERVAL, BASE_URL
 
 _LOGGER = logging.getLogger(__name__)
 
-async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
+
+async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up the NASCAR sensor from a config entry."""
+
+    session = async_get_clientsession(hass)
 
     async def async_update_data():
         """Fetch data from the NASCAR API."""
         try:
-            async with aiohttp.ClientSession() as session:
-                with async_timeout.timeout(10):
-                    response = await session.get(BASE_URL)
-                    raw_data = await response.json()
-                    return raw_data
+            async with async_timeout.timeout(10):
+                response = await session.get(BASE_URL)
+                response.raise_for_status()
+                return await response.json()
         except Exception as e:
             _LOGGER.error(f"Error fetching NASCAR data: {e}")
             raise UpdateFailed(f"Error fetching NASCAR data: {e}")
@@ -50,7 +52,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
                     else:
                         _LOGGER.debug("Using hourly update interval.")
                         return timedelta(hours=1)
-
                 except ValueError as e:
                     _LOGGER.error(f"Error parsing race time: {e}. Raw string: {race_time_str}")
                     return timedelta(minutes=DEFAULT_UPDATE_INTERVAL)
@@ -73,20 +74,21 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
     async def update_interval_task():
         """Update the polling interval dynamically."""
         while True:
-            new_interval = await determine_update_interval()
-            if new_interval != coordinator.update_interval:
-                _LOGGER.info(f"Updating polling interval to {new_interval}")
-                coordinator.update_interval = new_interval
+            try:
+                new_interval = await determine_update_interval()
+                if new_interval != coordinator.update_interval:
+                    _LOGGER.info(f"Updating polling interval to {new_interval}")
+                    coordinator.update_interval = new_interval
+            except Exception as e:
+                _LOGGER.error(f"Error updating polling interval: {e}")
             await asyncio.sleep(60)
 
-    hass.async_create_task(update_interval_task())  # ✅ replaced deprecated loop.create_task
+    hass.async_create_task(update_interval_task())
 
     await coordinator.async_config_entry_first_refresh()
 
     hass.data.setdefault(DOMAIN, {})[entry.entry_id] = coordinator
 
-    hass.async_create_task(
-        hass.config_entries.async_forward_entry_setups(entry, ["sensor"])  # ✅ correct usage
-    )
+    await hass.config_entries.async_forward_entry_setups(entry, ["sensor"])
 
     return True
