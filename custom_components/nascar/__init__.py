@@ -1,10 +1,12 @@
 import logging
 from datetime import timedelta, datetime
+import asyncio
+import aiohttp
+import async_timeout
+
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
-import aiohttp
-import async_timeout
 
 from .const import DOMAIN, DEFAULT_UPDATE_INTERVAL, BASE_URL
 
@@ -30,7 +32,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
         try:
             data = await async_update_data()
             race_time_str = data.get("time_of_day_os")
-            
+
             if race_time_str:
                 try:
                     race_time = datetime.fromisoformat(race_time_str.replace("Z", "+00:00"))
@@ -63,7 +65,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
         _LOGGER,
         name="nascar_data",
         update_method=async_update_data,
-        update_interval=timedelta(minutes=DEFAULT_UPDATE_INTERVAL),  # Default update interval
+        update_interval=timedelta(minutes=DEFAULT_UPDATE_INTERVAL),
     )
 
     async def update_interval_task():
@@ -73,14 +75,16 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
             if new_interval != coordinator.update_interval:
                 _LOGGER.info(f"Updating polling interval to {new_interval}")
                 coordinator.update_interval = new_interval
-            await hass.async_create_task(hass.async_sleep(60))  # Check every 60 seconds
+            await asyncio.sleep(60)  # <- fixed here
 
-    hass.loop.create_task(update_interval_task())  # Start dynamic interval updates
+    hass.async_create_task(update_interval_task())  # <- fixed here
 
     await coordinator.async_config_entry_first_refresh()
 
     hass.data.setdefault(DOMAIN, {})[entry.entry_id] = coordinator
+
     hass.async_create_task(
-        hass.config_entries.async_forward_entry_setups(entry, ["sensor"])
+        hass.config_entries.async_forward_entry_setups(entry, ["sensor"])  # <- correct
     )
+
     return True
