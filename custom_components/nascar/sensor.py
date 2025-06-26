@@ -1,50 +1,51 @@
 import logging
+from datetime import datetime
 from homeassistant.components.sensor import SensorEntity
+from homeassistant.helpers.update_coordinator import CoordinatorEntity
+from homeassistant.util import dt as dt_util
+
 from .const import DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
 
-class NascarSensor(SensorEntity):
+
+class NascarSensor(CoordinatorEntity, SensorEntity):
     """Representation of a NASCAR race sensor."""
 
     def __init__(self, coordinator, favorite_driver_number):
-        """Initialize the sensor."""
-        self.coordinator = coordinator
+        super().__init__(coordinator)
         self.favorite_driver_number = favorite_driver_number
         self._attr_name = "NASCAR Race Info"
         self._attr_unique_id = "nascar_race_info"
 
     @property
     def state(self):
-        """Return the state of the sensor (time of day or lap number)."""
+        """Return the sensor state (time or lap number)."""
         data = self.coordinator.data
         if data:
-            # Show "time_of_day_os" before the race
             race_time_str = data.get("time_of_day_os")
-            if race_time_str and self._is_before_race(data):
+            if race_time_str and self._is_before_race(race_time_str):
                 return race_time_str
-            # Show lap number after the race has started
             return data.get("lap_number", "N/A")
         return "N/A"
 
-    def _is_before_race(self, data):
-        """Check if the race is before starting (based on time)."""
-        race_time_str = data.get("time_of_day_os")
-        if race_time_str:
-            race_time = race_time_str.split("T")[-1]
-            race_hour, race_minute = map(int, race_time.split(":")[:2])
-            current_time = self.coordinator.hass.helpers.dt_util.utcnow().hour * 60 + self.coordinator.hass.helpers.dt_util.utcnow().minute
-            return (race_hour * 60 + race_minute) > current_time
-        return False
+    def _is_before_race(self, race_time_str):
+        """Check if the race has not started yet."""
+        try:
+            race_time = datetime.fromisoformat(race_time_str.replace("Z", "+00:00"))
+            now = dt_util.utcnow().astimezone(race_time.tzinfo)
+            return now < race_time
+        except Exception as e:
+            _LOGGER.warning(f"Failed to parse race time: {race_time_str} - {e}")
+            return False
 
     @property
     def extra_state_attributes(self):
-        """Return race attributes, excluding vehicles."""
+        """Return additional race information."""
         data = self.coordinator.data
         if not data:
             return {}
 
-        # Extract all race details except "vehicles"
         race_attributes = {
             "lap_number": data.get("lap_number"),
             "elapsed_time": data.get("elapsed_time"),
@@ -65,98 +66,116 @@ class NascarSensor(SensorEntity):
             "number_of_lead_changes": data.get("number_of_lead_changes"),
             "number_of_leaders": data.get("number_of_leaders"),
             "avg_diff_1to3": data.get("avg_diff_1to3"),
-            "stage_num": data.get("stage", {}).get("stage_num"),
-            "finish_at_lap": data.get("stage", {}).get("finish_at_lap"),
-            "laps_in_stage": data.get("stage", {}).get("laps_in_stage"),
         }
 
-        # Get the top 5 driver numbers as an array
-        running_order = []
-        if "vehicles" in data:
-            for driver in data["vehicles"][:5]:  # Limit to top 5 drivers
-                driver_number = driver.get("vehicle_number")
-                if driver_number:
-                    running_order.append(str(driver_number))
+        stage = data.get("stage", {})
+        race_attributes["stage_num"] = stage.get("stage_num")
+        race_attributes["finish_at_lap"] = stage.get("finish_at_lap")
+        race_attributes["laps_in_stage"] = stage.get("laps_in_stage")
 
-        # Add the running_order and favorite driver's position to the attributes
+        # Top 5 vehicles
+        running_order = [
+            str(driver.get("vehicle_number"))
+            for driver in data.get("vehicles", [])[:5]
+            if driver.get("vehicle_number")
+        ]
         race_attributes["running_order"] = running_order
         race_attributes["favorite_driver_position"] = self.get_favorite_driver_position(data)
 
         return race_attributes
 
     def get_favorite_driver_position(self, data):
-        """Return the position of the user's favorite driver."""
-        if "vehicles" in data:
-            for position, driver in enumerate(data["vehicles"], start=1):
-                if str(driver.get("vehicle_number")) == str(self.favorite_driver_number):
-                    return position
-        return "N/A"  # If the favorite driver is not found
+        """Find the favorite driver's current position."""
+        for position, driver in enumerate(data.get("vehicles", []), start=1):
+            if str(driver.get("vehicle_number")) == str(self.favorite_driver_number):
+                return position
+        return "N/A"
 
-class NascarVehicleSensor(SensorEntity):
-    """Representation of a NASCAR vehicle sensor for the favorite driver."""
+
+class NascarVehicleSensor(CoordinatorEntity, SensorEntity):
+    """Sensor for favorite driver's vehicle stats."""
 
     def __init__(self, coordinator, favorite_driver_number):
-        """Initialize the sensor."""
-        self.coordinator = coordinator
+        super().__init__(coordinator)
         self.favorite_driver_number = favorite_driver_number
         self._attr_name = f"NASCAR Vehicle Info - {favorite_driver_number}"
         self._attr_unique_id = f"nascar_vehicle_info_{favorite_driver_number}"
 
     @property
     def state(self):
-        """Return the state of the sensor (vehicle's running position)."""
-        data = self.coordinator.data
-        if data and "vehicles" in data:
-            for driver in data["vehicles"]:
-                if str(driver.get("vehicle_number")) == str(self.favorite_driver_number):
-                    return driver.get("running_position", "N/A")
+        """Return current running position of the favorite driver."""
+        driver = self.get_driver_data()
+        if driver:
+            return driver.get("running_position", "N/A")
         return "N/A"
 
     @property
     def extra_state_attributes(self):
-        """Return all vehicle information for the favorite driver."""
-        data = self.coordinator.data
-        if data and "vehicles" in data:
-            for driver in data["vehicles"]:
-                if str(driver.get("vehicle_number")) == str(self.favorite_driver_number):
-                    # Extract the full vehicle details for the favorite driver
-                    return {
-                        "vehicle_number": driver.get("vehicle_number", "N/A"),
-                        "driver_name": driver["driver"].get("full_name", "N/A"),
-                        "vehicle_manufacturer": driver.get("vehicle_manufacturer", "N/A"),
-                        "average_restart_speed": driver.get("average_restart_speed", "N/A"),
-                        "average_running_position": driver.get("average_running_position", "N/A"),
-                        "average_speed": driver.get("average_speed", "N/A"),
-                        "best_lap": driver.get("best_lap", "N/A"),
-                        "best_lap_speed": driver.get("best_lap_speed", "N/A"),
-                        "best_lap_time": driver.get("best_lap_time", "N/A"),
-                        "vehicle_elapsed_time": driver.get("vehicle_elapsed_time", "N/A"),
-                        "fastest_laps_run": driver.get("fastest_laps_run", "N/A"),
-                        "laps_position_improved": driver.get("laps_position_improved", "N/A"),
-                        "laps_completed": driver.get("laps_completed", "N/A"),
-                        "laps_led": sum(led["end_lap"] - led["start_lap"] for led in driver.get("laps_led", [])),
-                        "last_lap_speed": driver.get("last_lap_speed", "N/A"),
-                        "last_lap_time": driver.get("last_lap_time", "N/A"),
-                        "passes_made": driver.get("passes_made", "N/A"),
-                        "passing_differential": driver.get("passing_differential", "N/A"),
-                        "position_differential_last_10_percent": driver.get("position_differential_last_10_percent", "N/A"),
-                        "pit_stops": driver.get("pit_stops", "N/A"),
-                        "qualifying_status": driver.get("qualifying_status", "N/A"),
-                        "running_position": driver.get("running_position", "N/A"),
-                        "status": driver.get("status", "N/A"),
-                        "delta": driver.get("delta", "N/A"),
-                        "sponsor_name": driver.get("sponsor_name", "N/A"),
-                        "starting_position": driver.get("starting_position", "N/A"),
-                        "times_passed": driver.get("times_passed", "N/A"),
-                        "quality_passes": driver.get("quality_passes", "N/A"),
-                        "is_on_track": driver.get("is_on_track", "N/A"),
-                        "is_on_dvp": driver.get("is_on_dvp", "N/A"),
-                    }
-        return {}
+        """Return extended attributes for the favorite driver."""
+        driver = self.get_driver_data()
+        if not driver:
+            return {}
+
+        def get_or_default(key, default="N/A"):
+            return driver.get(key, default)
+
+        def get_driver_field(key, default="N/A"):
+            return driver.get("driver", {}).get(key, default)
+
+        laps_led = sum(
+            led.get("end_lap", 0) - led.get("start_lap", 0)
+            for led in driver.get("laps_led", [])
+        )
+
+        return {
+            "vehicle_number": get_or_default("vehicle_number"),
+            "driver_name": get_driver_field("full_name"),
+            "vehicle_manufacturer": get_or_default("vehicle_manufacturer"),
+            "average_restart_speed": get_or_default("average_restart_speed"),
+            "average_running_position": get_or_default("average_running_position"),
+            "average_speed": get_or_default("average_speed"),
+            "best_lap": get_or_default("best_lap"),
+            "best_lap_speed": get_or_default("best_lap_speed"),
+            "best_lap_time": get_or_default("best_lap_time"),
+            "vehicle_elapsed_time": get_or_default("vehicle_elapsed_time"),
+            "fastest_laps_run": get_or_default("fastest_laps_run"),
+            "laps_position_improved": get_or_default("laps_position_improved"),
+            "laps_completed": get_or_default("laps_completed"),
+            "laps_led": laps_led,
+            "last_lap_speed": get_or_default("last_lap_speed"),
+            "last_lap_time": get_or_default("last_lap_time"),
+            "passes_made": get_or_default("passes_made"),
+            "passing_differential": get_or_default("passing_differential"),
+            "position_differential_last_10_percent": get_or_default("position_differential_last_10_percent"),
+            "pit_stops": get_or_default("pit_stops"),
+            "qualifying_status": get_or_default("qualifying_status"),
+            "running_position": get_or_default("running_position"),
+            "status": get_or_default("status"),
+            "delta": get_or_default("delta"),
+            "sponsor_name": get_or_default("sponsor_name"),
+            "starting_position": get_or_default("starting_position"),
+            "times_passed": get_or_default("times_passed"),
+            "quality_passes": get_or_default("quality_passes"),
+            "is_on_track": get_or_default("is_on_track"),
+            "is_on_dvp": get_or_default("is_on_dvp"),
+        }
+
+    def get_driver_data(self):
+        """Return the data dict for the favorite driver."""
+        for driver in self.coordinator.data.get("vehicles", []):
+            if str(driver.get("vehicle_number")) == str(self.favorite_driver_number):
+                return driver
+        return None
+
 
 async def async_setup_entry(hass, entry, async_add_entities):
-    """Set up the NASCAR sensor platform."""
+    """Set up NASCAR sensors from config entry."""
     coordinator = hass.data[DOMAIN][entry.entry_id]
     favorite_driver_number = entry.data["driver_number"]
 
-    async_add_entities([NascarSensor(coordinator, favorite_driver_number), NascarVehicleSensor(coordinator, favorite_driver_number)])
+    sensors = [
+        NascarSensor(coordinator, favorite_driver_number),
+        NascarVehicleSensor(coordinator, favorite_driver_number),
+    ]
+
+    async_add_entities(sensors)
