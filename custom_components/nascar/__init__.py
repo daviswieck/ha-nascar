@@ -8,6 +8,8 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
+from homeassistant.util import dt as dt_util  # ✅ Needed for datetime utilities
+
 from .const import DOMAIN, DEFAULT_UPDATE_INTERVAL, BASE_URL
 
 _LOGGER = logging.getLogger(__name__)
@@ -36,10 +38,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
             if race_time_str:
                 try:
                     race_time = datetime.fromisoformat(race_time_str.replace("Z", "+00:00"))
-                    now = datetime.now(race_time.tzinfo)
+                    now = dt_util.utcnow().astimezone(race_time.tzinfo)
                     time_until_race = race_time - now
 
-                    if 0 <= time_until_race.total_seconds() <= 900:  # 15 minutes
+                    if 0 <= time_until_race.total_seconds() <= 900:
                         _LOGGER.debug("Switching to 5-second update interval.")
                         return timedelta(seconds=5)
                     elif time_until_race.total_seconds() < 0 and data.get("flag_state") != "Finished":
@@ -75,16 +77,16 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
             if new_interval != coordinator.update_interval:
                 _LOGGER.info(f"Updating polling interval to {new_interval}")
                 coordinator.update_interval = new_interval
-            await asyncio.sleep(60)  # <- fixed here
+            await asyncio.sleep(60)
 
-    hass.async_create_task(update_interval_task())  # <- fixed here
+    hass.async_create_task(update_interval_task())  # ✅ replaced deprecated loop.create_task
 
     await coordinator.async_config_entry_first_refresh()
 
     hass.data.setdefault(DOMAIN, {})[entry.entry_id] = coordinator
 
     hass.async_create_task(
-        hass.config_entries.async_forward_entry_setups(entry, ["sensor"])  # <- correct
+        hass.config_entries.async_forward_entry_setups(entry, ["sensor"])  # ✅ correct usage
     )
 
     return True
